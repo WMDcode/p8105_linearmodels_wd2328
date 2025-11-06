@@ -1,0 +1,146 @@
+---
+title: "Linear Models"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+```
+
+# Load Data
+
+```{r}
+data("nyc_airbnb")
+```
+
+```{r}
+nyc_airbnb =
+  nyc_airbnb |>
+  mutate(
+    stars = review_scores_location / 2
+  ) |>
+  rename(
+    borough = neighbourhood_group
+  ) |>
+  filter(borough != "Staten Island") |>
+  select(price, stars, borough, room_type, neighbourhood)
+```
+
+# Do regression
+
+```{r}
+lm_fit = lm(price ~ stars + borough, data = nyc_airbnb)
+summary(lm_fit)
+```
+
+### Do some additional cleaning
+
+```{r}
+nyc_airbnb =
+  nyc_airbnb |>
+  mutate(
+    borough = fct_infreq(borough),
+    room_type = fct_infreq(room_type)
+  )
+```
+
+### Try linear regression again
+
+```{r}
+lm_fit = lm(price ~ stars + borough, data = nyc_airbnb)
+summary(lm_fit)
+```
+
+### Look at 'lm' stuff using broom
+
+```{r}
+lm_fit |>
+  broom::tidy()
+
+lm_fit |>
+  broom::glance()
+```
+
+## Diagnostics
+
+### Look at Residuals
+
+```{r}
+nyc_airbnb |>
+  modelr::add_residuals(lm_fit) |>
+  modelr::add_predictions(lm_fit) |>
+  filter(resid <= 1000) |>
+  ggplot(aes(x = borough, y = resid)) +
+  geom_violin()
+```
+
+## Hypothsis Testing
+
+```{r}
+lm_fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+lm_fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
+
+anova(lm_fit_null, lm_fit_alt) |>
+  broom::tidy()
+```
+
+## Interactions vs nested data
+
+```{r}
+lm_fit_interactions = 
+  lm(price ~ stars * borough + room_type * borough, data = nyc_airbnb)
+
+lm_fit_interactions |>
+  broom::tidy()
+```
+
+Write a short function
+
+```{r}
+lm_airbnb = function(df) {
+  
+  lm(price ~ stars + room_type, data = df)
+  
+}
+```
+
+Create a list of dataframes and iterate to fit the model each time.
+
+```{r}
+nested_lm_results = 
+  nyc_airbnb |>
+  nest(data = -borough) |>
+  mutate(
+    fits = map(data, lm_airbnb),
+    results = map(fits, broom::tidy)
+  ) |>
+  select(borough, results) |>
+  unnest(results)
+```
+
+```{r}
+nested_lm_results |>
+  select(borough, term, estimate) |>
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  )
+```
+
+Lets do even more extreme examples
+
+```{r}
+nyc_airbnb |>
+  filter(borough == "Manhattan") |>
+  nest(data = -neighbourhood) |>
+  mutate(
+    fits = map(data, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(fits, broom::tidy)
+  ) |>
+  select(neighbourhood, results) |>
+  unnest(results)
+```
+
